@@ -23,6 +23,21 @@ model.load_state_dict(checkpoint["model_state_dict"])
 model.eval()
 ```
 
+## 予測を画像で確認
+
+学習後に実行します。
+
+```bash
+.venv/bin/python -m vision_transformer.visualize_predictions
+```
+
+`outputs/predictions.png` に16枚の画像、正解（True）、予測（Pred）、
+予測クラスのsoftmax値を保存します。緑は正解、赤は誤分類です。
+softmax値は正しさを保証する確率ではありません。
+表示される正解率は一覧に載せた画像だけの値です。
+`--checkpoint`、`--output`、`--num-samples`、`--seed`で変更できます。
+既定のseed=1は、既定の学習実行で評価に使うseedと同じです。
+
 ## テスト
 
 ```bash
