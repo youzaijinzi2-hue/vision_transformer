@@ -49,3 +49,33 @@ class EncoderBlock(nn.Module):
         x = x + self.dropout1(attention_output)
         x = x + self.dropout2(self.ffn(self.norm2(x)))
         return x, weights
+
+
+class TransformerEncoder(nn.Module):
+    """独立したL層のPre-LNブロックと、最後のLayerNorm。"""
+
+    def __init__(
+        self,
+        d_model: int,
+        num_heads: int,
+        d_ff: int,
+        num_layers: int,
+        dropout: float = 0.0,
+    ):
+        super().__init__()
+        if num_layers <= 0:
+            raise ValueError("num_layers must be positive.")
+        self.layers = nn.ModuleList([
+            EncoderBlock(d_model, num_heads, d_ff, dropout)
+            for _ in range(num_layers)
+        ])
+        self.norm = LayerNormalization(d_model)
+
+    def forward(
+        self, x: torch.Tensor
+    ) -> tuple[torch.Tensor, list[torch.Tensor]]:
+        attention_maps = []
+        for layer in self.layers:
+            x, weights = layer(x)
+            attention_maps.append(weights)
+        return self.norm(x), attention_maps
