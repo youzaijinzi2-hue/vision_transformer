@@ -10,3 +10,8 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Datasets and generated artifacts
+data/
+checkpoints/
+outputs/

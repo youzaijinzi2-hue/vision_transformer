@@ -8,6 +8,7 @@ import torch
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 from torch import nn
+from torchvision import datasets, transforms
 
 from vision_transformer.model import VisionTransformer
 from vision_transformer.train import make_stripe_dataset
@@ -43,9 +44,9 @@ def plot_predictions(
             continue
         image = images[index]
         if image.shape[0] == 1:
-            axis.imshow(image[0], cmap="gray", vmin=0, vmax=1)
+            axis.imshow(image[0].numpy(), cmap="gray", vmin=0, vmax=1)
         else:
-            axis.imshow(image.permute(1, 2, 0).clamp(0, 1))
+            axis.imshow(image.permute(1, 2, 0).clamp(0, 1).numpy())
         axis.set_title(
             f"True: {class_names[labels[index].item()]}\n"
             f"Pred: {class_names[predictions[index].item()]} "
@@ -62,27 +63,52 @@ def plot_predictions(
     return {"accuracy": accuracy}
 
 
+def sample_cifar10(root: Path, num_samples: int, seed: int, download: bool):
+    """公式テストデータから重複なしで無作為抽出する。"""
+    dataset = datasets.CIFAR10(
+        root=root, train=False, download=download, transform=transforms.ToTensor()
+    )
+    if not 0 < num_samples <= len(dataset):
+        raise ValueError(f"num-samples must be between 1 and {len(dataset)}.")
+    indices = torch.randperm(len(dataset), generator=torch.Generator().manual_seed(seed))
+    samples = [dataset[i.item()] for i in indices[:num_samples]]
+    images = torch.stack([image for image, _ in samples])
+    labels = torch.tensor([label for _, label in samples], dtype=torch.long)
+    return images, labels, dataset.classes
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", type=Path, default=Path("checkpoints/stripes.pt"))
     parser.add_argument("--output", type=Path, default=Path("outputs/predictions.png"))
     parser.add_argument("--num-samples", type=int, default=16)
     parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument("--data-dir", type=Path, default=Path("data"))
+    parser.add_argument("--no-download", action="store_true")
     args = parser.parse_args()
     if args.num_samples <= 0:
         parser.error("num-samples must be positive")
 
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
     config = checkpoint["model_config"]
-    if any(config[key] != value for key, value in {
-        "image_size": 16, "in_channels": 1, "num_classes": 2,
-    }.items()):
-        parser.error("This demo requires a 16x16 grayscale, two-class stripe model.")
+    dataset_name = checkpoint.get("dataset", "stripes")
+    if dataset_name == "cifar10":
+        images, labels, class_names = sample_cifar10(
+            args.data_dir, args.num_samples, args.seed, not args.no_download
+        )
+    elif dataset_name == "stripes":
+        if any(config[key] != value for key, value in {
+            "image_size": 16, "in_channels": 1, "num_classes": 2,
+        }.items()):
+            parser.error("Stripe model requires 16x16 grayscale images and two classes.")
+        images, labels = make_stripe_dataset(args.num_samples, args.seed).tensors
+        class_names = ["vertical", "horizontal"]
+    else:
+        parser.error(f"Unsupported dataset: {dataset_name}")
     model = VisionTransformer(**config)
     model.load_state_dict(checkpoint["model_state_dict"])
-    images, labels = make_stripe_dataset(args.num_samples, args.seed).tensors
     metrics = plot_predictions(
-        model, images, labels, ["vertical", "horizontal"], args.output
+        model, images, labels, class_names, args.output
     )
     print(f"Displayed accuracy: {metrics['accuracy']:.1%}; Saved: {args.output}")
 
