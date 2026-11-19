@@ -108,3 +108,69 @@ softmax値は正しさを保証する確率ではありません。
 ```bash
 .venv/bin/python -m pytest -q
 ```
+
+### Position Embedding ablation
+
+`VisionTransformerEmbedding` / `VisionTransformer` accept
+`position_init_std=0.02` and `position_scale=1.0`. The defaults preserve the
+previous behavior; the scale is a fixed scalar, while positions remain trainable.
+
+Run all six conditions A–F with three seeds (0, 1, 2):
+
+```bash
+uv run python -m vision_transformer.ablate_positions \
+  --dataset cifar10 --epochs 10 --num-seeds 3 --device auto \
+  --output-dir outputs/position_ablation
+```
+
+Defaults follow `train_cifar10`: patch size 4, D=64, 3 encoder layers, 4 heads,
+FFN=256, dropout=0.1, batch size 64, AdamW lr=0.001 (weight decay=0.01), no
+scheduler, no augmentation, ToTensor, and a seeded 45,000/5,000 train/validation
+split. Test accuracy is not used. Use `--seeds 10 20 30` for explicit seeds,
+`--no-download` for cached CIFAR-10, or `--device cpu|cuda|mps`. Model dimensions,
+dropout, batch size and learning rate are configurable and shared by every run.
+
+Download-free smoke test (synthetic stripes, not a CIFAR-10 result):
+
+```bash
+uv run python -m vision_transformer.ablate_positions \
+  --dataset stripes --epochs 1 --num-seeds 2 --batch-size 8 \
+  --max-train-samples 16 --max-val-samples 8 --device cpu \
+  --output-dir outputs/position_ablation_smoke
+```
+
+Each output directory stores `config.json` (settings, versions, seeds, optimizer),
+`results.json` (all runs), `summary.json` (final validation mean/std), and five
+PNG plots. Each `A_seed_0/` etc. contains `run.json` (initial statistics and full
+history), `history.csv` (epoch, train/validation loss/accuracy, learning rate),
+and `final.pt` (last-epoch model, configuration and optimizer state). Final
+accuracy always means the last epoch, not the best validation epoch. Replot with:
+
+```bash
+uv run python -m vision_transformer.ablate_positions \
+  --plot-only --output-dir outputs/position_ablation
+```
+
+Curves show seed means with ±1 population standard deviation; bars use the same
+population standard deviation (`ddof=0`, also defined for one seed). The scatter
+shows each seed separately. Initial statistics use the first unshuffled real
+training batch before updates, exclude CLS in both embeddings, and measure
+population std across all elements and mean L2 norm across patch tokens. Position
+statistics cover its unique patch positions, without batch duplication. This
+measurement does not consume the training loader or training random stream.
+
+For a given seed, each condition resets Python/NumPy/PyTorch RNGs, creates the
+same architecture in the same order, and uses an independently seeded loader.
+This shares standard normal initialization draws, common parameter initial
+values, dataset split and shuffle order. DataLoader workers are zero; deterministic
+algorithms are requested with warnings for unsupported kernels. Reproducibility
+across devices or PyTorch versions is not guaranteed.
+
+B and C have the same effective initial position distribution (and matching
+samples up to floating-point roundoff with the shared draws). Their trainable
+parameters differ: `dL/dP = alpha * dL/d(alpha P)`. AdamW moments, epsilon and
+parameter updates depend on that parameterization; an update in P is multiplied
+by alpha at the encoder input. Equal initial position/patch ratios therefore do
+not imply equal training dynamics. Compare paired seeds and learning curves as
+well as final means/std; the synthetic smoke test is only an execution check.
+Use a fresh output directory for each experiment to avoid mixing settings.

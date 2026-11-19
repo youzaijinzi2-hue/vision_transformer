@@ -16,6 +16,8 @@ class VisionTransformerEmbedding(nn.Module):
         in_channels: int,
         d_model: int,
         dropout: float = 0.0,
+        position_init_std: float = 0.02,
+        position_scale: float = 1.0,
     ):
         super().__init__()
         if image_size <= 0 or patch_size <= 0:
@@ -23,6 +25,7 @@ class VisionTransformerEmbedding(nn.Module):
         if image_size % patch_size != 0:
             raise ValueError("image_size must be divisible by patch_size.")
 
+        self.position_scale = position_scale
         self.image_size = image_size
         self.patch_embedding = PatchEmbedding(in_channels, patch_size, d_model)
         num_patches = (image_size // patch_size) ** 2
@@ -33,7 +36,7 @@ class VisionTransformerEmbedding(nn.Module):
         self.position_embedding = nn.Parameter(
             torch.zeros(1, num_patches + 1, d_model)
         )
-        nn.init.normal_(self.position_embedding, std=0.02)
+        nn.init.normal_(self.position_embedding, mean=0.0, std=position_init_std)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, images: torch.Tensor) -> torch.Tensor:
@@ -47,4 +50,4 @@ class VisionTransformerEmbedding(nn.Module):
         # 同じCLSを各画像の先頭に置く。expandでも勾配は元のパラメータに戻る。
         cls_tokens = self.cls_token.expand(images.shape[0], -1, -1)
         tokens = torch.cat([cls_tokens, patches], dim=1)
-        return self.dropout(tokens + self.position_embedding)
+        return self.dropout(tokens + self.position_scale * self.position_embedding)

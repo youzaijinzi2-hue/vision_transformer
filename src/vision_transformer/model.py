@@ -21,12 +21,15 @@ class VisionTransformer(nn.Module):
         d_ff: int,
         num_layers: int,
         dropout: float = 0.0,
+        position_init_std: float = 0.02,
+        position_scale: float = 1.0,
     ):
         super().__init__()
         if num_classes <= 0:
             raise ValueError("num_classes must be positive.")
         self.embedding = VisionTransformerEmbedding(
-            image_size, patch_size, in_channels, d_model, dropout
+            image_size, patch_size, in_channels, d_model, dropout,
+            position_init_std=position_init_std, position_scale=position_scale,
         )
         self.encoder = TransformerEncoder(
             d_model, num_heads, d_ff, num_layers, dropout
